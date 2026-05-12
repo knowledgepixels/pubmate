@@ -1,0 +1,13 @@
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix pehterms: <https://w3id.org/peh/terms/> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix schema1: <http://schema.org/> .
+
+<https://w3id.org/peh/matrices/01KRE01VQ2SPV822T9AN64ZDQ3> a owl:Class ;
+    rdfs:label "Our example matrix" ;
+    schema1:description "This is just an example matrix" ;
+    rdfs:subClassOf <https://w3id.org/peh/matrices/01KQ9QXVQNNJBQFZTAC8Y3ARD1> .
+
+[] a pehterms:EntityList ;
+    pehterms:hasMatrixSubclass <https://w3id.org/peh/matrices/01KRE01VQ2SPV822T9AN64ZDQ3> .
+
