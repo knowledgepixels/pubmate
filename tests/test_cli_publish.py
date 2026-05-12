@@ -95,9 +95,7 @@ def test_publish_cli_writes_term_to_nanopub_mapping_file(tmp_path, monkeypatch) 
 
     assert result.exit_code == 0, result.output
     assert output_file.read_text(encoding="utf-8") == (
-        "term_id\tnanopub_uri\n"
-        "term-a\thttps://w3id.org/np/RA-term-a\n"
-        "term-b\thttps://w3id.org/np/RA-term-b\n"
+        "term_id\tnanopub_uri\n" "term-a\thttps://w3id.org/np/RA-term-a\n" "term-b\thttps://w3id.org/np/RA-term-b\n"
     )
 
 

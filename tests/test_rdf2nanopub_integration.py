@@ -28,13 +28,10 @@ def test_publish_to_test_server_with_testsuite_connector_keys() -> None:
         np_uri = generator.publish_single(assertion, dry_run=False)
 
     pubmate_warnings = [
-        w
-        for w in recorded
-        if issubclass(w.category, DeprecationWarning) and "/src/pubmate/" in str(w.filename)
+        w for w in recorded if issubclass(w.category, DeprecationWarning) and "/src/pubmate/" in str(w.filename)
     ]
-    assert not pubmate_warnings, (
-        "Deprecation warnings were raised from pubmate code paths: "
-        + "; ".join(f"{w.filename}:{w.lineno}: {w.message}" for w in pubmate_warnings)
+    assert not pubmate_warnings, "Deprecation warnings were raised from pubmate code paths: " + "; ".join(
+        f"{w.filename}:{w.lineno}: {w.message}" for w in pubmate_warnings
     )
     assert str(np_uri).startswith(("http://purl.org/np/", "https://purl.org/np/", "https://w3id.org/np/"))
 

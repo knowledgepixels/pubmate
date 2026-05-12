@@ -24,7 +24,11 @@ def cli(
     parent_subclasses: list[str] | None = None,
 ):
     g = rdfcleaner.read_graph(input_ontology_path)
-    property_map = {"label": "http://www.w3.org/2000/01/rdf-schema#label"}
+    property_map = {
+        "label": "http://www.w3.org/2000/01/rdf-schema#label",
+        "name": "http://www.w3.org/2000/01/rdf-schema#label",
+        "short_name": "http://schema.org/alternateName",
+    }
     rdfcleaner.clean_graph(g, base_namespace=base_namespace, property_map=property_map)
 
     counter = 0

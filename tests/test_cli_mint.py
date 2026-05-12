@@ -8,11 +8,7 @@ from pubmate.cli.mint import cli
 
 def test_mint_cli_dry_run_prints_updated_yaml_without_overwriting_input(tmp_path) -> None:
     data_path = tmp_path / "terms.yaml"
-    original = (
-        "vocabulary_terms:\n"
-        "  - name: Alpha\n"
-        "  - name: Beta\n"
-    )
+    original = "vocabulary_terms:\n" "  - name: Alpha\n" "  - name: Beta\n"
     data_path.write_text(original, encoding="utf-8")
 
     runner = CliRunner(mix_stderr=False)
@@ -45,11 +41,7 @@ def test_mint_cli_keeps_valid_uri_that_does_not_match_selected_method(tmp_path) 
     data_path = tmp_path / "terms.yaml"
     existing_id = "https://example.org/terms/alpha"
     data_path.write_text(
-        (
-            "vocabulary_terms:\n"
-            "  - name: Alpha\n"
-            f"    id: {existing_id}\n"
-        ),
+        ("vocabulary_terms:\n" "  - name: Alpha\n" f"    id: {existing_id}\n"),
         encoding="utf-8",
     )
 

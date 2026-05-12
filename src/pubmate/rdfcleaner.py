@@ -9,6 +9,8 @@ from rdflib.namespace import RDFS
 logging.basicConfig(level=logging.INFO, format="::%(levelname)s:: %(message)s")
 logger = logging.getLogger(__name__)
 
+SCHEMA = rdflib.Namespace("http://schema.org/")
+
 
 # ------------------------------------------------------------
 # Translation cleanup
@@ -20,10 +22,10 @@ def add_language(g: rdflib.Graph, base_namespace: str, property_map: dict[str, s
     def build_values_block() -> str:
         return " ".join(f'("{k}" <{v}>)' for k, v in property_map.items())
 
-    TRANSLATIONS = f"<{base_namespace}translations>"
-    PROPERTY_NAME = f"<{base_namespace}property_name>"
-    LANGUAGE = f"<{base_namespace}language>"
-    TRANSLATED_VALUE = f"<{base_namespace}translated_value>"
+    TRANSLATIONS = f"<{base_namespace}hasTranslation>"
+    PROPERTY_NAME = f"<{SCHEMA.identifier}>"
+    LANGUAGE = f"<{SCHEMA.inLanguage}>"
+    TRANSLATED_VALUE = f"<{base_namespace}hasTranslatedValue>"
     values_rows = build_values_block()
 
     logger.info("Running SPARQL CONSTRUCT to convert translations into language-tagged literals")
@@ -103,6 +105,25 @@ def serialize_graph(g: rdflib.Graph, output_path: str) -> None:
 # ------------------------------------------------------------
 # Assertion splitting
 # ------------------------------------------------------------
+def _copy_subject_description(
+    source: rdflib.Graph,
+    target: rdflib.Graph,
+    subject: rdflib.term.Identifier,
+    visited: set[rdflib.term.Identifier],
+) -> None:
+    if subject in visited:
+        return
+
+    visited.add(subject)
+
+    for triple in source.triples((subject, None, None)):
+        target.add(triple)
+
+        _, _, obj = triple
+        if isinstance(obj, rdflib.BNode):
+            _copy_subject_description(source, target, obj, visited)
+
+
 def split_into_assertions(
     g: rdflib.Graph,
     all_classes: set[str],
@@ -121,9 +142,9 @@ def split_into_assertions(
             logger.info(f"Creating assertion graph for {term_id}")
 
             assertion_graph = rdflib.Graph()
+            for prefix, namespace in g.namespaces():
+                assertion_graph.bind(prefix, namespace)
 
-            # Add all triples where subclass is subject
-            for triple in g.triples((subclass, None, None)):
-                assertion_graph.add(triple)
+            _copy_subject_description(g, assertion_graph, subclass, set())
 
             yield term_id, assertion_graph

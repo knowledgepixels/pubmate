@@ -13,8 +13,7 @@ logger = logging.getLogger(__name__)
 def _write_redirect_mapping(output_path: pathlib.Path, mappings: list[tuple[str, str]]) -> None:
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(
-        "term_id\tnanopub_uri\n"
-        + "".join(f"{term_id}\t{nanopub_uri}\n" for term_id, nanopub_uri in mappings),
+        "term_id\tnanopub_uri\n" + "".join(f"{term_id}\t{nanopub_uri}\n" for term_id, nanopub_uri in mappings),
         encoding="utf-8",
     )
 
@@ -113,9 +112,7 @@ def cli(
         }
         missing = [flag for flag, value in required_values.items() if not value]
         if missing:
-            raise click.ClickException(
-                "Missing required options in manual-key mode: " + ", ".join(missing)
-            )
+            raise click.ClickException("Missing required options in manual-key mode: " + ", ".join(missing))
 
         nanopub_generator = NanopubGenerator(
             orcid_id=orcid_id,

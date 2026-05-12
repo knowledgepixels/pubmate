@@ -34,11 +34,11 @@ def pytest_configure(config) -> None:
     testsuite_ref = config.getoption("--pubmate-testsuite-ref")
     run_nanopub_existence_check = config.getoption("--pubmate-run-nanopub-existence-check")
 
-    os.environ["PUBMATE_RUN_TESTSERVER_PUBLISH"] = (
-        run_testserver_publish or os.getenv("PUBMATE_RUN_TESTSERVER_PUBLISH", "1")
+    os.environ["PUBMATE_RUN_TESTSERVER_PUBLISH"] = run_testserver_publish or os.getenv(
+        "PUBMATE_RUN_TESTSERVER_PUBLISH", "1"
     )
     os.environ["PUBMATE_TESTSUITE_KEY"] = testsuite_key or os.getenv("PUBMATE_TESTSUITE_KEY", "rsa-key1")
     os.environ["PUBMATE_TESTSUITE_REF"] = testsuite_ref or os.getenv("PUBMATE_TESTSUITE_REF", "main")
-    os.environ["PUBMATE_RUN_NANOPUB_EXISTENCE_CHECK"] = (
-        run_nanopub_existence_check or os.getenv("PUBMATE_RUN_NANOPUB_EXISTENCE_CHECK", "1")
+    os.environ["PUBMATE_RUN_NANOPUB_EXISTENCE_CHECK"] = run_nanopub_existence_check or os.getenv(
+        "PUBMATE_RUN_NANOPUB_EXISTENCE_CHECK", "1"
     )

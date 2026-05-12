@@ -89,7 +89,7 @@ class IdentifierGenerator:
         # Convert dict to canonical JSON (sorted keys, no whitespace)
         canonical = json.dumps(data, sort_keys=True, separators=(",", ":"))
         return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
-    
+
     def random_ulid(self) -> str:
         timestamp = ULID.provider.timestamp().to_bytes(constants.TIMESTAMP_LEN, "big")
         randomness = os.urandom(constants.RANDOMNESS_LEN)
@@ -157,6 +157,4 @@ class IdentifierGenerator:
 
         # If we exhausted all attempts, raise an error
         label_value = entity.get(preflabel, "<missing>")
-        raise RuntimeError(
-            f"Could not generate a unique identifier for '{label_value}' after {max_attempts} attempts"
-        )
+        raise RuntimeError(f"Could not generate a unique identifier for '{label_value}' after {max_attempts} attempts")
