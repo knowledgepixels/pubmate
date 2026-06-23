@@ -1,0 +1,52 @@
+name: Run Tests
+
+permissions:
+  contents: read
+  actions: write
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ${{matrix.os}}
+    strategy:
+      fail-fast: true
+      matrix:
+        os: [ubuntu-latest]
+        python-version: ['3.12', '3.13', '3.14']
+
+    steps:
+    - name: Cancel Previous Runs
+      uses: styfle/cancel-workflow-action@0.13.1
+      with:
+        access_token: ${{ github.token }}
+    
+    - name: Checkout
+      uses: actions/checkout@v6.0.2
+    
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v6.1.0
+      with:
+        python-version: ${{ matrix.python-version }}
+        
+    - name: Install uv
+      run: |
+        curl -LsSf https://astral.sh/uv/install.sh | sh
+        export PATH="$HOME/.cargo/bin:$PATH"
+        echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+      shell: bash
+    
+    - name: Create and activate virtual environment
+      run: |
+        uv venv
+        echo "VIRTUAL_ENV=$PWD/.venv" >> $GITHUB_ENV
+        echo "$PWD/.venv/bin" >> $GITHUB_PATH
+      shell: bash
+
+    - name: Run all tests
+      run: |
+        uv run pytest tests
+      shell: bash
