@@ -2,10 +2,9 @@ import logging
 import pathlib
 
 import click
-import nanopub
 import rdflib
 
-from pubmate import NanopubGenerator
+from pubmate.cli._signing import resolve_signing
 from pubmate.defining import DefiningNanopubBuilder
 from pubmate.idmap import IdMap
 from pubmate.minting import SequentialMinter, term_input_from_assertion
@@ -13,51 +12,6 @@ from pubmate.utils import serialize_nanopub
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
-
-
-def _build_builder(
-    namespace: str,
-    *,
-    orcid_id: str | None,
-    name: str | None,
-    private_key: str | None,
-    public_key: str | None,
-    intro_nanopub_uri: str | None,
-    use_testsuite_keys: bool,
-    testsuite_key: str,
-    testsuite_ref: str,
-    test_server: bool,
-    dry_run: bool,
-) -> DefiningNanopubBuilder:
-    """Resolve signing material into a configured defining-nanopub builder."""
-    if use_testsuite_keys:
-        generator = NanopubGenerator.from_testsuite_connector(
-            key_name=testsuite_key,
-            suite_ref=testsuite_ref,
-            intro_nanopub_uri=intro_nanopub_uri,
-            test_server=True,
-        )
-        return DefiningNanopubBuilder(namespace, profile=generator.profile, test_server=True)
-
-    if private_key and public_key:
-        profile = nanopub.Profile(
-            orcid_id=orcid_id,
-            name=name,
-            private_key=private_key,
-            public_key=public_key,
-            introduction_nanopub_uri=intro_nanopub_uri,
-        )
-        return DefiningNanopubBuilder(namespace, profile=profile, test_server=test_server)
-
-    if not dry_run:
-        raise click.UsageError(
-            "No signing keys provided. Pass --private-key/--public-key or --use-testsuite-keys, "
-            "or use --dry-run for an offline preview with throwaway (ephemeral) keys."
-        )
-    # Ephemeral keyless builder: signs offline with a throwaway key. The artifact
-    # codes are NOT authoritative (they depend on the key) -- preview/testing only.
-    logger.warning("No keys given; minting with an ephemeral key (--dry-run). Artifact codes are throwaway.")
-    return DefiningNanopubBuilder(namespace, test_server=test_server)
 
 
 @click.command()
@@ -106,8 +60,7 @@ def cli(
     superseding pass (see the migration tooling); this mints the assertions as
     given.
     """
-    builder = _build_builder(
-        namespace,
+    signing = resolve_signing(
         orcid_id=orcid_id,
         name=name,
         private_key=private_key,
@@ -119,6 +72,7 @@ def cli(
         test_server=test_server,
         dry_run=dry_run,
     )
+    builder = DefiningNanopubBuilder(namespace, profile=signing.profile, test_server=signing.test_server)
 
     files = sorted(assertion_folder.glob(pattern))
     if not files:

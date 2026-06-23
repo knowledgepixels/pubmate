@@ -23,6 +23,7 @@ dev = [
 [project.scripts]
 pubmate-cleanrdf = "pubmate.cli.cleanrdf:cli"
 pubmate-extract-assertions = "pubmate.cli.extract_assertions:cli"
+pubmate-migrate = "pubmate.cli.migrate:cli"
 pubmate-mint = "pubmate.cli.mint:cli"
 pubmate-mint-publish = "pubmate.cli.mint_publish:cli"
 pubmate-validate-defining = "pubmate.cli.validate_defining:cli"
