@@ -39,6 +39,7 @@ _ARTIFACT_CODE_RE = re.compile(r"RA[A-Za-z0-9_\-]{40,}")
 
 _PROV = rdflib.Namespace("http://www.w3.org/ns/prov#")
 _RDFS = rdflib.Namespace("http://www.w3.org/2000/01/rdf-schema#")
+_DCTERMS = rdflib.Namespace("http://purl.org/dc/terms/")
 
 
 def term_input_from_assertion(
@@ -48,6 +49,7 @@ def term_input_from_assertion(
     thing_uri: rdflib.URIRef,
     term_id: Optional[str] = None,
     default_suggester: Optional[str] = None,
+    part_of: Optional[str] = None,
 ) -> TermInput:
     """Re-key a per-term assertion onto the placeholder thing URI.
 
@@ -58,6 +60,9 @@ def term_input_from_assertion(
     rewrites it (in subject and object position) to ``thing_uri``, lifts the
     ``prov:wasAttributedTo`` suggester out of the assertion (it belongs in
     provenance, added by the builder), and reads ``rdfs:label`` for the nanopub.
+
+    If ``part_of`` is given, a ``dcterms:isPartOf`` link from the term to that URI
+    (e.g. the vocabulary the term belongs to) is added to the assertion.
 
     The original term URI becomes the returned ``TermInput.term_id`` (the id-map
     key) unless ``term_id`` is given.
@@ -81,6 +86,9 @@ def term_input_from_assertion(
         new_s = thing_uri if s == old_subject else s
         new_o = thing_uri if o == old_subject else o
         rekeyed.add((new_s, p, new_o))
+
+    if part_of:
+        rekeyed.add((thing_uri, _DCTERMS.isPartOf, rdflib.URIRef(part_of)))
 
     return TermInput(
         term_id=term_id or str(old_subject),

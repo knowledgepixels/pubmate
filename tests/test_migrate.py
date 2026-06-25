@@ -104,6 +104,25 @@ def test_rerun_with_existing_idmap_mints_nothing():
     assert len(second.id_map) == 2
 
 
+def test_part_of_link_on_defining_and_superseding():
+    DCTERMS = rdflib.Namespace("http://purl.org/dc/terms/")
+    vocab = rdflib.URIRef("https://w3id.org/spaces/biochementity/r/vocabulary")
+    assertions = _batch({"a": {"isomer_of": ["b"]}, "b": {"isomer_of": ["a"]}})  # cycle -> 1 supersession
+    minter, sup = _minter_and_supersession()
+    result = migrate_terms(
+        assertions, namespace=NS, minter=minter, supersession_builder=sup,
+        dry_run=True, part_of=str(vocab),
+    )
+    new = result.id_map.thing_uri_map
+    # every defining nanopub links its term to the vocabulary
+    for t in result.defining.terms:
+        assert (rdflib.URIRef(new[t.term_id]), DCTERMS.isPartOf, vocab) in t.nanopub.assertion
+    # and the superseding nanopub keeps the link
+    assert result.superseding
+    for s in result.superseding:
+        assert (rdflib.URIRef(new[s.term_id]), DCTERMS.isPartOf, vocab) in s.nanopub.assertion
+
+
 def test_default_suggester_attributes_defining_and_superseding():
     PROV = rdflib.Namespace("http://www.w3.org/ns/prov#")
     GERTJAN = rdflib.URIRef("https://orcid.org/0000-0001-8327-0142")

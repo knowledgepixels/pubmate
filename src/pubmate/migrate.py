@@ -23,6 +23,7 @@ from typing import Dict, List, Mapping, Optional, Set, Tuple
 
 import nanopub
 import rdflib
+from rdflib.namespace import DCTERMS
 
 from pubmate._nanopub_build import preferred_label
 from pubmate.defining import DefiningNanopubBuilder
@@ -62,6 +63,7 @@ def _resolve_all(
     subject: rdflib.URIRef,
     new_subject: rdflib.URIRef,
     thing_uris: Mapping[str, str],
+    part_of: Optional[str] = None,
 ) -> rdflib.Graph:
     """Re-state an assertion against the term's fixed URI with all refs resolved.
 
@@ -70,6 +72,9 @@ def _resolve_all(
     nanopub's full assertion once every term has been minted. Dangling term
     references (in-namespace, not resolvable) are dropped — consistent with the
     defining pass — so a superseding nanopub never reintroduces a broken link.
+
+    If ``part_of`` is given, the term's ``dcterms:isPartOf`` link is (re)added, so
+    the superseding assertion carries it just like the defining one.
     """
     out = rdflib.Graph()
     for s, p, o in assertion:
@@ -86,6 +91,8 @@ def _resolve_all(
         else:
             no = o
         out.add((ns, p, no))
+    if part_of:
+        out.add((new_subject, DCTERMS.isPartOf, rdflib.URIRef(part_of)))
     return out
 
 
@@ -97,6 +104,7 @@ def migrate_terms(
     supersession_builder: SupersessionBuilder,
     existing: Optional[IdMap] = None,
     dry_run: bool = True,
+    part_of: Optional[str] = None,
 ) -> MigrationResult:
     """Migrate a batch of cross-referencing term assertions to nanopub ids.
 
@@ -113,6 +121,8 @@ def migrate_terms(
         existing: an id-map of terms already minted in a previous run; these are
             not re-minted, but their URIs are used to resolve references.
         dry_run: sign only (offline), do not publish.
+        part_of: if given, every term gets a ``dcterms:isPartOf`` link to this URI
+            (e.g. the vocabulary) in both its defining and superseding assertion.
     """
     subjects: Dict[str, rdflib.URIRef] = {old: rdflib.URIRef(old) for old in assertions}
     batch_ids = set(assertions)
@@ -152,7 +162,9 @@ def migrate_terms(
                 "key, likely a stale/deduplicated id); dropped from the minted nanopub: %s",
                 old, len(split.dangling), [str(o) for _, _, o in split.dangling],
             )
-        term = term_input_from_assertion(split.kept, namespace=namespace, thing_uri=minter.builder.thing_uri)
+        term = term_input_from_assertion(
+            split.kept, namespace=namespace, thing_uri=minter.builder.thing_uri, part_of=part_of,
+        )
         minted = minter.mint(term, dry_run=dry_run)
         result.defining.terms.append(minted)
         result.id_map.add(
@@ -176,7 +188,7 @@ def migrate_terms(
         new_subject = rdflib.URIRef(minted.thing_uri)
         full = _resolve_all(
             assertions[old], namespace=namespace, subject=subjects[old],
-            new_subject=new_subject, thing_uris=resolved_thing,
+            new_subject=new_subject, thing_uris=resolved_thing, part_of=part_of,
         )
         sup_np = supersession_builder.build(
             full, supersedes_np_uri=minted.np_uri, label=_label(full, new_subject),

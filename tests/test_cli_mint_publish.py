@@ -73,6 +73,33 @@ def test_mint_publish_dry_run_writes_trig_and_idmap(tmp_path) -> None:
     assert entry.np_uri.startswith("https://w3id.org/np/RA")
 
 
+def test_mint_publish_adds_part_of_type_and_template(tmp_path) -> None:
+    DCTERMS = rdflib.Namespace("http://purl.org/dc/terms/")
+    NPX = rdflib.Namespace("http://purl.org/nanopub/x/")
+    NT = rdflib.Namespace("https://w3id.org/np/o/ntemplate/")
+    vocab = "https://w3id.org/spaces/biochementity/r/vocabulary"
+    type_uri = "https://w3id.org/peh/terms/BioChemEntity"
+    template_uri = "https://w3id.org/np/RAhSlIuuw5YqmMoyyvmy5GL3qIhs7sp14i6x2y3DCOhXM"
+    assertions = tmp_path / "assertions"
+    assertions.mkdir()
+    _assertion_graph(assertions / "caffeine.ttl")
+    out = tmp_path / "published"
+
+    result = CliRunner().invoke(
+        cli,
+        ["-a", str(assertions), "--output-dir", str(out), "--dry-run",
+         "--part-of", vocab, "--nanopub-type", type_uri, "--template", template_uri],
+    )
+    assert result.exit_code == 0, result.output
+    np = rdflib.Dataset()
+    np.parse(next(out.glob("*.trig")), format="trig")
+    triples = {(p, str(o)) for _s, p, o, _g in np.quads((None, None, None, None))}
+    # isPartOf in the assertion, the two tags in pubinfo.
+    assert (DCTERMS.isPartOf, vocab) in triples
+    assert (NPX.hasNanopubType, type_uri) in triples
+    assert (NT.wasCreatedFromTemplate, template_uri) in triples
+
+
 def test_mint_publish_without_keys_requires_dry_run(tmp_path) -> None:
     assertions = tmp_path / "assertions"
     assertions.mkdir()

@@ -50,6 +50,7 @@ def _code(np_uri: str) -> str:
 @click.option("--default-suggester", help="ORCID attributed as the suggester (prov:wasAttributedTo) for any term that carries none — e.g. the contributor of an existing batch being migrated.")
 @click.option("--nanopub-type", "nanopub_types", multiple=True, help="URI tagged in pubinfo as npx:hasNanopubType on every nanopub (repeatable).")
 @click.option("--template", help="Assertion-template URI tagged in pubinfo as nt:wasCreatedFromTemplate on every nanopub (for Nanodash rendering).")
+@click.option("--part-of", help="URI each term links to via dcterms:isPartOf in its assertion (e.g. the vocabulary).")
 @click.option("--private-key", type=click.Path(exists=True, dir_okay=False))
 @click.option("--public-key", type=click.Path(exists=True, dir_okay=False))
 @click.option("--intro-nanopub-uri")
@@ -69,6 +70,7 @@ def cli(
     default_suggester: str | None,
     nanopub_types: tuple[str, ...],
     template: str | None,
+    part_of: str | None,
     private_key: str | None,
     public_key: str | None,
     intro_nanopub_uri: str | None,
@@ -116,7 +118,7 @@ def cli(
 
     result = migrate_terms(
         assertions, namespace=namespace, minter=minter, supersession_builder=supersession,
-        existing=existing, dry_run=dry_run,
+        existing=existing, dry_run=dry_run, part_of=part_of,
     )
 
     output_dir.mkdir(parents=True, exist_ok=True)

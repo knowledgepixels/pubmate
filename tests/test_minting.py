@@ -100,6 +100,21 @@ def test_term_input_prefers_untagged_label_over_localized():
     assert term.label == "Lead"
 
 
+def test_term_input_adds_part_of_link():
+    from pubmate.minting import term_input_from_assertion
+    DCTERMS = rdflib.Namespace("http://purl.org/dc/terms/")
+    thing = rdflib.URIRef(NAMESPACE + "X")
+    vocab = "https://w3id.org/spaces/biochementity/r/vocabulary"
+    g = rdflib.Graph()
+    s = rdflib.URIRef(NAMESPACE + "lead")
+    g.add((s, RDF.type, RDFS.Class))
+    term = term_input_from_assertion(g, namespace=NAMESPACE, thing_uri=thing, part_of=vocab)
+    assert (thing, DCTERMS.isPartOf, rdflib.URIRef(vocab)) in term.assertion
+    # No part_of -> no isPartOf triple.
+    plain = term_input_from_assertion(g, namespace=NAMESPACE, thing_uri=thing)
+    assert (None, DCTERMS.isPartOf, None) not in plain.assertion
+
+
 def test_preferred_label_falls_back_english_then_any():
     from pubmate._nanopub_build import preferred_label
     s = rdflib.URIRef(NAMESPACE + "x")

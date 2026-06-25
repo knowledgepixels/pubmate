@@ -20,6 +20,9 @@ logger = logging.getLogger(__name__)
 @click.option("--output-dir", required=True, type=click.Path(file_okay=False, path_type=pathlib.Path), help="Where to write the minted .trig nanopubs.")
 @click.option("--id-map-file", type=click.Path(dir_okay=False, path_type=pathlib.Path), help="TSV id-map to write/merge (old_id -> thing_uri, np_uri).")
 @click.option("--default-suggester", help="Fallback suggester ORCID for terms without their own.")
+@click.option("--part-of", help="URI each term links to via dcterms:isPartOf in its assertion (e.g. the vocabulary).")
+@click.option("--nanopub-type", "nanopub_types", multiple=True, help="URI tagged in pubinfo as npx:hasNanopubType on every nanopub (repeatable).")
+@click.option("--template", help="Assertion-template URI tagged in pubinfo as nt:wasCreatedFromTemplate on every nanopub (for Nanodash rendering).")
 @click.option("--orcid-id")
 @click.option("--name")
 @click.option("--private-key", type=click.Path(exists=True, dir_okay=False))
@@ -37,6 +40,9 @@ def cli(
     output_dir: pathlib.Path,
     id_map_file: pathlib.Path | None,
     default_suggester: str | None,
+    part_of: str | None,
+    nanopub_types: tuple[str, ...],
+    template: str | None,
     orcid_id: str | None,
     name: str | None,
     private_key: str | None,
@@ -72,7 +78,10 @@ def cli(
         test_server=test_server,
         dry_run=dry_run,
     )
-    builder = DefiningNanopubBuilder(namespace, profile=signing.profile, test_server=signing.test_server)
+    builder = DefiningNanopubBuilder(
+        namespace, profile=signing.profile, test_server=signing.test_server,
+        nanopub_types=nanopub_types, template=template,
+    )
 
     files = sorted(assertion_folder.glob(pattern))
     if not files:
@@ -89,6 +98,7 @@ def cli(
                 namespace=namespace,
                 thing_uri=builder.thing_uri,
                 default_suggester=default_suggester,
+                part_of=part_of,
             )
         )
 
