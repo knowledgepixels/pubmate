@@ -2,12 +2,16 @@
 
 Records, per term, the mapping from its old/local identifier to the new
 nanopub-based identifiers minted for it: the term's thing URI (its trusty
-artifact-code URI) and the URI of its defining nanopub.
+artifact-code URI) and the URI of its defining nanopub, plus an optional
+drift ``fingerprint`` (see :mod:`pubmate.fingerprint`) of the identity-defining
+inputs the published nanopub was built from -- so a later run can tell an
+unchanged term from one that has drifted and needs superseding.
 
 The map is meant to be kept permanently and grown incrementally, so old
 identifiers stay resolvable and re-runs can append without losing prior entries.
 It round-trips to a tab-separated file (a superset of a simple redirect table)
-and to JSON.
+and to JSON. The TSV gained a fourth ``fingerprint`` column; 3-column files
+written by older versions still read (their fingerprint is empty).
 """
 
 from __future__ import annotations
@@ -19,16 +23,20 @@ from typing import Dict, Iterable, Iterator, List, Optional, Union
 
 from pubmate.minting import MintBatch
 
-_TSV_HEADER = ("old_id", "thing_uri", "np_uri")
+_TSV_HEADER = ("old_id", "thing_uri", "np_uri", "fingerprint")
 
 
 @dataclass(frozen=True)
 class IdMapEntry:
-    """One term's old identifier and its new nanopub-based identifiers."""
+    """One term's old identifier and its new nanopub-based identifiers.
+
+    ``fingerprint`` is the drift fingerprint of the identity-defining inputs the
+    nanopub was built from (empty when unknown, e.g. legacy 3-column rows)."""
 
     old_id: str
     thing_uri: str
     np_uri: str
+    fingerprint: str = ""
 
 
 class IdMap:
@@ -60,13 +68,21 @@ class IdMap:
             self.add(entry, overwrite=overwrite)
 
     @classmethod
-    def from_batch(cls, batch: MintBatch) -> "IdMap":
+    def from_batch(cls, batch: MintBatch, *, fingerprints: Optional[Dict[str, str]] = None) -> "IdMap":
         """Build a map from a :class:`~pubmate.minting.MintBatch`.
 
-        The minter's ``term_id`` is used as the old identifier.
+        The minter's ``term_id`` is used as the old identifier. ``fingerprints``,
+        if given, supplies each term's drift fingerprint keyed by ``term_id``
+        (missing terms get an empty fingerprint).
         """
+        fingerprints = fingerprints or {}
         return cls(
-            IdMapEntry(old_id=t.term_id, thing_uri=t.thing_uri, np_uri=t.np_uri)
+            IdMapEntry(
+                old_id=t.term_id,
+                thing_uri=t.thing_uri,
+                np_uri=t.np_uri,
+                fingerprint=fingerprints.get(t.term_id, ""),
+            )
             for t in batch.terms
         )
 
@@ -94,6 +110,11 @@ class IdMap:
         """``old_id -> nanopub URI``."""
         return {e.old_id: e.np_uri for e in self}
 
+    @property
+    def fingerprint_map(self) -> Dict[str, str]:
+        """``old_id -> drift fingerprint`` (empty string when unknown)."""
+        return {e.old_id: e.fingerprint for e in self}
+
     def _sorted(self) -> List[IdMapEntry]:
         return sorted(self._entries.values(), key=lambda e: e.old_id)
 
@@ -101,7 +122,7 @@ class IdMap:
 
     def to_tsv(self) -> str:
         lines = ["\t".join(_TSV_HEADER)]
-        lines += ["\t".join((e.old_id, e.thing_uri, e.np_uri)) for e in self._sorted()]
+        lines += ["\t".join((e.old_id, e.thing_uri, e.np_uri, e.fingerprint)) for e in self._sorted()]
         return "\n".join(lines) + "\n"
 
     @classmethod
@@ -110,10 +131,12 @@ class IdMap:
         lines = [ln for ln in text.splitlines() if ln.strip()]
         for line in lines:
             fields = line.split("\t")
-            if tuple(fields) == _TSV_HEADER:
-                continue
-            if len(fields) != 3:
-                raise ValueError(f"expected 3 tab-separated fields, got {len(fields)}: {line!r}")
+            if fields[0] == _TSV_HEADER[0]:
+                continue  # header row (3- or 4-column)
+            if len(fields) == 3:  # legacy row, no fingerprint
+                fields = (*fields, "")
+            if len(fields) != 4:
+                raise ValueError(f"expected 3 or 4 tab-separated fields, got {len(fields)}: {line!r}")
             id_map.add(IdMapEntry(*fields))
         return id_map
 

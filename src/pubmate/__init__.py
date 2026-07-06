@@ -1,5 +1,13 @@
 from pubmate.defining import DEFAULT_LICENSE, DefiningNanopubBuilder
+from pubmate.fingerprint import (
+    FP_SCHEME,
+    IdentityFields,
+    canonical_assertion,
+    fingerprint_term,
+    identity_fields,
+)
 from pubmate.idmap import IdMap, IdMapEntry
+from pubmate.incremental import IncrementalResult, publish_incremental
 from pubmate.introduction import build_introduction
 from pubmate.migrate import MigrationResult, MintedSupersession, migrate_terms
 from pubmate.mint import IdentifierGenerator
@@ -11,10 +19,13 @@ from pubmate.utils import serialize_nanopub
 
 __all__ = [
     "DEFAULT_LICENSE",
+    "FP_SCHEME",
     "DefiningNanopubBuilder",
     "IdMap",
     "IdMapEntry",
     "IdentifierGenerator",
+    "IdentityFields",
+    "IncrementalResult",
     "MintBatch",
     "MintedTerm",
     "MigrationResult",
@@ -25,8 +36,12 @@ __all__ = [
     "SupersessionBuilder",
     "TermInput",
     "build_introduction",
+    "canonical_assertion",
+    "fingerprint_term",
+    "identity_fields",
     "migrate_terms",
     "order_terms",
+    "publish_incremental",
     "referenced_terms",
     "serialize_nanopub",
     "sign_and_publish",

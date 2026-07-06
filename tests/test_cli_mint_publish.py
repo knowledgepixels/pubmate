@@ -131,5 +131,64 @@ def test_mint_publish_skips_already_minted(tmp_path) -> None:
     )
 
     assert result.exit_code == 0, result.output
-    # Nothing newly minted, so no .trig written.
+    # Legacy 3-column entry has no fingerprint: backfilled, not re-issued.
     assert list(out.glob("*.trig")) == []
+    parsed = IdMap.from_tsv(idmap.read_text(encoding="utf-8"))
+    assert parsed[OLD_ID].fingerprint != ""
+
+
+def test_mint_publish_writes_fingerprint_and_reruns_idempotently(tmp_path) -> None:
+    assertions = tmp_path / "assertions"
+    assertions.mkdir()
+    _assertion_graph(assertions / "caffeine.ttl")
+    out = tmp_path / "published"
+    idmap = tmp_path / "id-map.tsv"
+    args = ["-a", str(assertions), "--output-dir", str(out), "--id-map-file", str(idmap), "--dry-run"]
+
+    first = CliRunner().invoke(cli, args)
+    assert first.exit_code == 0, first.output
+    fp1 = IdMap.from_tsv(idmap.read_text(encoding="utf-8"))[OLD_ID].fingerprint
+    assert fp1 != ""
+
+    # Second run: unchanged term is skipped (no new trig), fingerprint stable.
+    for trig in out.glob("*.trig"):
+        trig.unlink()
+    second = CliRunner().invoke(cli, args)
+    assert second.exit_code == 0, second.output
+    assert list(out.glob("*.trig")) == []
+    assert IdMap.from_tsv(idmap.read_text(encoding="utf-8"))[OLD_ID].fingerprint == fp1
+
+
+def test_mint_publish_supersedes_a_drifted_term(tmp_path) -> None:
+    NPX = rdflib.Namespace("http://purl.org/nanopub/x/")
+    assertions = tmp_path / "assertions"
+    assertions.mkdir()
+    _assertion_graph(assertions / "caffeine.ttl")
+    out = tmp_path / "published"
+    idmap = tmp_path / "id-map.tsv"
+    args = ["-a", str(assertions), "--output-dir", str(out), "--id-map-file", str(idmap), "--dry-run"]
+
+    assert CliRunner().invoke(cli, args).exit_code == 0
+    before = IdMap.from_tsv(idmap.read_text(encoding="utf-8"))[OLD_ID]
+    for trig in out.glob("*.trig"):
+        trig.unlink()
+
+    # Edit the term's label and re-run: the drift must be superseded.
+    g = _assertion_graph()
+    s = rdflib.URIRef(OLD_ID)
+    g.remove((s, RDFS.label, rdflib.Literal("Caffeine")))
+    g.add((s, RDFS.label, rdflib.Literal("Caffeine (edited)")))
+    g.serialize(destination=assertions / "caffeine.ttl", format="turtle")
+
+    assert CliRunner().invoke(cli, args).exit_code == 0
+    trigs = list(out.glob("*.trig"))
+    assert len(trigs) == 1  # one superseding nanopub written
+    np = rdflib.Dataset()
+    np.parse(trigs[0], format="trig")
+    supersedes = {str(o) for _s, _p, o, _g in np.quads((None, NPX.supersedes, None, None))}
+    assert before.np_uri in supersedes
+
+    after = IdMap.from_tsv(idmap.read_text(encoding="utf-8"))[OLD_ID]
+    assert after.thing_uri == before.thing_uri
+    assert after.np_uri != before.np_uri
+    assert after.fingerprint != before.fingerprint

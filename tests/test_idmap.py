@@ -41,10 +41,24 @@ def test_merge_preserves_existing_and_adds_new():
 def test_tsv_roundtrip_and_header():
     id_map = IdMap([_entry("b"), _entry("a")])
     tsv = id_map.to_tsv()
-    assert tsv.splitlines()[0] == "old_id\tthing_uri\tnp_uri"
+    assert tsv.splitlines()[0] == "old_id\tthing_uri\tnp_uri\tfingerprint"
     # entries are sorted by old_id
     assert tsv.splitlines()[1].startswith("a\t")
     assert IdMap.from_tsv(tsv).thing_uri_map == id_map.thing_uri_map
+
+
+def test_tsv_roundtrips_fingerprint():
+    id_map = IdMap([IdMapEntry("a", "https://example.org/terms/RAa", "https://w3id.org/np/RAa", "deadbeef")])
+    restored = IdMap.from_tsv(id_map.to_tsv())
+    assert restored["a"].fingerprint == "deadbeef"
+    assert restored.fingerprint_map == {"a": "deadbeef"}
+
+
+def test_from_tsv_reads_legacy_three_column_rows():
+    legacy = "old_id\tthing_uri\tnp_uri\nalpha\thttps://example.org/terms/RAa\thttps://w3id.org/np/RAa\n"
+    id_map = IdMap.from_tsv(legacy)
+    assert id_map["alpha"].np_uri == "https://w3id.org/np/RAa"
+    assert id_map["alpha"].fingerprint == ""
 
 
 def test_json_roundtrip():
@@ -53,7 +67,7 @@ def test_json_roundtrip():
 
 
 def test_from_tsv_rejects_malformed_rows():
-    with pytest.raises(ValueError, match="expected 3 tab-separated fields"):
+    with pytest.raises(ValueError, match="expected 3 or 4 tab-separated fields"):
         IdMap.from_tsv("old_id\tthing_uri\tnp_uri\nalpha\tonly-two-fields\n")
 
 

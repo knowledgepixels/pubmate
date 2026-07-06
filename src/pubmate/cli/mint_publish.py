@@ -7,7 +7,9 @@ import rdflib
 from pubmate.cli._signing import resolve_signing
 from pubmate.defining import DefiningNanopubBuilder
 from pubmate.idmap import IdMap
+from pubmate.incremental import publish_incremental
 from pubmate.minting import SequentialMinter, term_input_from_assertion
+from pubmate.supersede import SupersessionBuilder
 from pubmate.utils import serialize_nanopub
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
@@ -55,14 +57,18 @@ def cli(
     dry_run: bool,
     pattern: str,
 ) -> None:
-    """Sequentially mint defining nanopubs from per-term assertions and publish them.
+    """Incrementally mint/supersede defining nanopubs from per-term assertions.
 
-    Each assertion is re-keyed onto the artifact-code placeholder, signed (which
-    lands the code on the term's thing URI), and -- unless --dry-run -- published.
-    Minted nanopubs are written to --output-dir as <old_id-stem>.trig and the
-    old_id -> thing_uri/np_uri mapping is written/merged into --id-map-file.
+    Each assertion is re-keyed onto the artifact-code placeholder. Per term, this
+    compares its identity fingerprint against the one recorded in --id-map-file:
+    a new term is minted, an unchanged term is skipped, and a *drifted* term
+    (content or wrapper changed) is superseded -- re-stated against its existing
+    thing URI in a nanopub that supersedes the recorded one, keeping the term's
+    identity. Published nanopubs (unless --dry-run) are written to --output-dir as
+    <artifact-code>.trig and the updated old_id -> thing_uri/np_uri/fingerprint
+    map is written to --id-map-file.
 
-    Inter-term links (forward refs/cycles) are intentionally left to a later
+    Inter-term links (forward refs/cycles) are intentionally left to the migration
     superseding pass (see the migration tooling); this mints the assertions as
     given.
     """
@@ -81,6 +87,10 @@ def cli(
     builder = DefiningNanopubBuilder(
         namespace, profile=signing.profile, test_server=signing.test_server,
         nanopub_types=nanopub_types, template=template,
+    )
+    supersession_builder = SupersessionBuilder(
+        profile=signing.profile, test_server=signing.test_server,
+        license=builder.license, nanopub_types=nanopub_types, template=template,
     )
 
     files = sorted(assertion_folder.glob(pattern))
@@ -105,26 +115,33 @@ def cli(
     existing = IdMap.from_tsv(id_map_file.read_text(encoding="utf-8")) if id_map_file and id_map_file.exists() else IdMap()
 
     minter = SequentialMinter(builder, default_suggester_orcid=default_suggester)
-    batch = minter.mint_all(
+    result = publish_incremental(
         terms,
+        minter=minter,
+        supersession_builder=supersession_builder,
+        existing=existing,
         dry_run=dry_run,
-        already_minted=existing.np_uri_map,
     )
 
-    # Write each nanopub as <artifact-code>.trig (the thing/np code under scheme A).
+    # Write each minted/superseding nanopub as <artifact-code>.trig (its own code:
+    # for a defining nanopub that equals the thing code, for a supersession its own).
     output_dir.mkdir(parents=True, exist_ok=True)
-    for minted in batch.terms:
-        code = minted.thing_uri.removeprefix(namespace)
-        (output_dir / f"{code}.trig").write_text(serialize_nanopub(minted.nanopub), encoding="utf-8")
+    published = [(m.np_uri, m.nanopub) for m in result.minted.terms]
+    published += [(s.np_uri, s.nanopub) for s in result.superseded]
+    for np_uri, np in published:
+        code = np_uri.rsplit("/", 1)[-1]
+        (output_dir / f"{code}.trig").write_text(serialize_nanopub(np), encoding="utf-8")
 
     if id_map_file is not None:
-        merged = IdMap(list(existing))
-        merged.merge(IdMap.from_batch(batch), overwrite=True)
         id_map_file.parent.mkdir(parents=True, exist_ok=True)
-        merged.write_tsv(id_map_file)
-        logger.info("Wrote id-map (%d entries) -> %s", len(merged), id_map_file)
+        result.id_map.write_tsv(id_map_file)
+        logger.info("Wrote id-map (%d entries) -> %s", len(result.id_map), id_map_file)
 
-    logger.info("Minted %d new term(s)%s -> %s", len(batch.terms), " (dry-run)" if dry_run else "", output_dir)
+    logger.info(
+        "Minted %d, superseded %d, skipped %d term(s)%s -> %s",
+        len(result.minted.terms), len(result.superseded), len(result.skipped),
+        " (dry-run)" if dry_run else "", output_dir,
+    )
 
 
 if __name__ == "__main__":
