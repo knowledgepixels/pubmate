@@ -23,17 +23,42 @@ from typing import Dict, List, Mapping, Optional, Set, Tuple
 
 import nanopub
 import rdflib
-from rdflib.namespace import DCTERMS
 
 from pubmate._nanopub_build import preferred_label
-from pubmate.defining import DefiningNanopubBuilder
+from pubmate.fingerprint import fingerprint_term
 from pubmate.idmap import IdMap, IdMapEntry
 from pubmate.minting import MintBatch, MintedTerm, SequentialMinter, term_input_from_assertion
 from pubmate.rdf2nanopub import sign_and_publish
-from pubmate.references import order_terms, referenced_terms, split_references
+from pubmate.references import order_terms, referenced_terms, resolve_references, split_references
 from pubmate.supersede import SupersessionBuilder
 
 logger = logging.getLogger(__name__)
+
+
+def _source_fingerprint(
+    assertion: rdflib.Graph,
+    *,
+    namespace: str,
+    minter: SequentialMinter,
+    part_of: Optional[str],
+) -> str:
+    """Drift fingerprint of a term's **as-given source** assertion.
+
+    Deliberately computed over the original assertion (references intact), *not*
+    the resolved/split graph that is actually minted, and with the same wrapper
+    (part-of, template, type, license, suggester) -- so it equals the fingerprint
+    :func:`pubmate.incremental.publish_incremental` computes for the same
+    unchanged term. That way a later incremental run over these sources skips them
+    (no phantom drift) and only supersedes on a real content or wrapper change.
+    """
+    term = term_input_from_assertion(
+        assertion,
+        namespace=namespace,
+        thing_uri=minter.builder.thing_uri,
+        part_of=part_of,
+        default_suggester=minter.default_suggester_orcid,
+    )
+    return fingerprint_term(term, minter.builder, default_suggester=minter.default_suggester_orcid)
 
 
 @dataclass
@@ -54,46 +79,6 @@ class MigrationResult:
     superseding: List[MintedSupersession] = field(default_factory=list)
     id_map: IdMap = field(default_factory=IdMap)
     deferred_edges: Set[Tuple[str, str]] = field(default_factory=set)
-
-
-def _resolve_all(
-    assertion: rdflib.Graph,
-    *,
-    namespace: str,
-    subject: rdflib.URIRef,
-    new_subject: rdflib.URIRef,
-    thing_uris: Mapping[str, str],
-    part_of: Optional[str] = None,
-) -> rdflib.Graph:
-    """Re-state an assertion against the term's fixed URI with all refs resolved.
-
-    Rewrites the subject (old URI -> ``new_subject``) and every object URI that
-    is a known old term id (-> its new thing URI). Used to build the superseding
-    nanopub's full assertion once every term has been minted. Dangling term
-    references (in-namespace, not resolvable) are dropped — consistent with the
-    defining pass — so a superseding nanopub never reintroduces a broken link.
-
-    If ``part_of`` is given, the term's ``dcterms:isPartOf`` link is (re)added, so
-    the superseding assertion carries it just like the defining one.
-    """
-    out = rdflib.Graph()
-    for s, p, o in assertion:
-        ns = new_subject if s == subject else s
-        if isinstance(o, rdflib.URIRef):
-            if o == subject:
-                no: rdflib.term.Node = new_subject
-            elif str(o) in thing_uris:
-                no = rdflib.URIRef(thing_uris[str(o)])
-            elif str(o).startswith(namespace):
-                continue  # dangling term reference -> drop
-            else:
-                no = o
-        else:
-            no = o
-        out.add((ns, p, no))
-    if part_of:
-        out.add((new_subject, DCTERMS.isPartOf, rdflib.URIRef(part_of)))
-    return out
 
 
 def migrate_terms(
@@ -168,7 +153,13 @@ def migrate_terms(
         minted = minter.mint(term, dry_run=dry_run)
         result.defining.terms.append(minted)
         result.id_map.add(
-            IdMapEntry(old_id=old, thing_uri=minted.thing_uri, np_uri=minted.np_uri), overwrite=True
+            IdMapEntry(
+                old_id=old,
+                thing_uri=minted.thing_uri,
+                np_uri=minted.np_uri,
+                fingerprint=_source_fingerprint(g, namespace=namespace, minter=minter, part_of=part_of),
+            ),
+            overwrite=True,
         )
         resolved_thing[old] = minted.thing_uri
         minted_by_term[old] = minted
@@ -186,7 +177,7 @@ def migrate_terms(
     for old, _deferred in deferred_by_term.items():
         minted = minted_by_term[old]
         new_subject = rdflib.URIRef(minted.thing_uri)
-        full = _resolve_all(
+        full = resolve_references(
             assertions[old], namespace=namespace, subject=subjects[old],
             new_subject=new_subject, thing_uris=resolved_thing, part_of=part_of,
         )
@@ -198,6 +189,13 @@ def migrate_terms(
         logger.info("Superseded %s (%s) -> %s", old, minted.np_uri, sup_uri)
         result.superseding.append(
             MintedSupersession(term_id=old, supersedes_np_uri=minted.np_uri, np_uri=sup_uri, nanopub=sup_np)
+        )
+        # Point the id-map at the latest version so a future re-issue supersedes
+        # this superseding nanopub, keeping the supersedes chain linear.
+        prev = result.id_map[old]
+        result.id_map.add(
+            IdMapEntry(old_id=old, thing_uri=prev.thing_uri, np_uri=sup_uri, fingerprint=prev.fingerprint),
+            overwrite=True,
         )
 
     return result

@@ -20,9 +20,10 @@ migration's hardest part (cycle handling) is unit-testable in isolation.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Dict, Iterator, List, Mapping, Set, Tuple
+from typing import Dict, Iterator, List, Mapping, Optional, Set, Tuple
 
 import rdflib
+from rdflib.namespace import DCTERMS
 
 
 def iter_term_references(
@@ -179,3 +180,47 @@ def split_references(
         else:
             result.dangling.append((s, p, o))
     return result
+
+
+def resolve_references(
+    assertion: rdflib.Graph,
+    *,
+    namespace: str,
+    subject: rdflib.URIRef,
+    new_subject: rdflib.URIRef,
+    thing_uris: Mapping[str, str],
+    part_of: Optional[str] = None,
+) -> rdflib.Graph:
+    """Re-state an assertion against ``new_subject`` with *all* references resolved.
+
+    Rewrites the term's subject (``subject`` -> ``new_subject``) and every object
+    URI that is a known term (in ``thing_uris``) to its new thing URI; a
+    self-reference (``o == subject``) becomes ``new_subject``. Inter-term
+    references (in ``namespace``) that are *not* in ``thing_uris`` are **dropped**
+    (a dangling reference, consistent with :func:`split_references`) rather than
+    baked in broken. Non-reference and out-of-namespace triples pass through.
+
+    Used both to re-state a term's *full* assertion once every term it references
+    is minted (the migration's superseding pass) and to rebuild an already-minted
+    term against its fixed URI when re-issuing it (the incremental supersede path).
+    Because every referenced term already has a stable thing URI, all references
+    resolve inline. If ``part_of`` is given, a ``dcterms:isPartOf`` link is added.
+    """
+    out = rdflib.Graph()
+    for s, p, o in assertion:
+        ns = new_subject if s == subject else s
+        if isinstance(o, rdflib.URIRef):
+            if o == subject:
+                no: rdflib.term.Node = new_subject
+            elif str(o) in thing_uris:
+                no = rdflib.URIRef(thing_uris[str(o)])
+            elif str(o).startswith(namespace):
+                continue  # dangling term reference -> drop
+            else:
+                no = o
+        else:
+            no = o
+        out.add((ns, p, no))
+    if part_of:
+        out.add((new_subject, DCTERMS.isPartOf, rdflib.URIRef(part_of)))
+    return out

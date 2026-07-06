@@ -9,10 +9,17 @@ id-map and take one of three actions:
 * **unchanged** -- fingerprint matches the recorded one: skip (carry the id-map
   entry forward untouched).
 * **drifted** -- fingerprint differs: *supersede*. Re-state the changed assertion
-  against the term's **existing fixed thing URI** (so the term keeps its identity)
-  in a nanopub that ``npx:supersedes`` the recorded one, then repoint the id-map's
-  ``np_uri``/``fingerprint`` at the new version. The thing URI is unchanged --
+  against the term's **existing fixed thing URI** (so the term keeps its identity),
+  with every inter-term reference resolved to its new thing URI via the id-map
+  (:func:`pubmate.references.resolve_references`) -- the targets are all minted, so
+  this preserves link resolution rather than reverting to old-id references. The
+  nanopub ``npx:supersedes`` the recorded one; the id-map's ``np_uri``/
+  ``fingerprint`` are repointed at the new version. The thing URI is unchanged --
   only the defining/superseding nanopub URI advances, chained by supersession.
+
+Note the mint path (new terms) still mints the assertion *as given*; reference
+resolution is applied on the supersede path, where every referenced term is
+guaranteed to be minted already.
 
 Legacy id-map rows carry no fingerprint. Rather than mass-supersede on the first
 fingerprinted run, such a term is treated as unchanged and its current fingerprint
@@ -38,6 +45,7 @@ from pubmate.idmap import IdMap, IdMapEntry
 from pubmate.migrate import MintedSupersession
 from pubmate.minting import MintBatch, SequentialMinter, TermInput
 from pubmate.rdf2nanopub import sign_and_publish
+from pubmate.references import resolve_references
 from pubmate.supersede import SupersessionBuilder
 
 logger = logging.getLogger(__name__)
@@ -52,17 +60,6 @@ class IncrementalResult:
     #: term_ids that were unchanged and skipped (includes backfilled legacy rows).
     skipped: List[str] = field(default_factory=list)
     id_map: IdMap = field(default_factory=IdMap)
-
-
-def _rekey_to_fixed(
-    assertion: rdflib.Graph, *, placeholder: rdflib.URIRef, fixed: rdflib.URIRef
-) -> rdflib.Graph:
-    """Rewrite the placeholder thing URI (subject and self-references) to the
-    term's already-minted fixed URI, so a superseding nanopub keeps its identity."""
-    out = rdflib.Graph()
-    for s, p, o in assertion:
-        out.add((fixed if s == placeholder else s, p, fixed if o == placeholder else o))
-    return out
 
 
 def publish_incremental(
@@ -125,9 +122,19 @@ def publish_incremental(
             result.skipped.append(term.term_id)
             continue
 
-        # Drift: supersede against the existing fixed thing URI.
+        # Drift: supersede against the existing fixed thing URI. Rebuild the
+        # assertion from source with every inter-term reference resolved to its
+        # new thing URI via the id-map (all targets are already minted), so the
+        # re-issued nanopub preserves link resolution instead of reverting to
+        # old-id references.
         fixed = rdflib.URIRef(entry.thing_uri)
-        full = _rekey_to_fixed(term.assertion, placeholder=placeholder, fixed=fixed)
+        full = resolve_references(
+            term.assertion,
+            namespace=minter.builder.namespace,
+            subject=placeholder,
+            new_subject=fixed,
+            thing_uris=result.id_map.thing_uri_map,
+        )
         sup_np = supersession_builder.build(
             full,
             supersedes_np_uri=entry.np_uri,

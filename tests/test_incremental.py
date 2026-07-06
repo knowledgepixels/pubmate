@@ -10,6 +10,9 @@ from pubmate.minting import SequentialMinter, TermInput
 from pubmate.supersede import SupersessionBuilder
 
 NAMESPACE = "https://example.org/terms/"
+TPL_OLD = "https://w3id.org/np/RAtemplateOld"
+TPL_NEW = "https://w3id.org/np/RAtemplateNew"
+REL = rdflib.URIRef("https://example.org/rel/isMetaboliteOf")
 
 
 def _minter() -> SequentialMinter:
@@ -20,10 +23,23 @@ def _sup() -> SupersessionBuilder:
     return SupersessionBuilder()
 
 
+def _wrapped(template):
+    builder = DefiningNanopubBuilder(NAMESPACE, template=template)
+    return SequentialMinter(builder), SupersessionBuilder(template=template)
+
+
 def _term(term_id: str, label: str) -> TermInput:
     builder = DefiningNanopubBuilder(NAMESPACE)
     assertion = builder.make_assertion([(RDF.type, RDFS.Class), (RDFS.label, Literal(label))])
     return TermInput(term_id=term_id, assertion=assertion, label=label)
+
+
+def _term_ref(term_uri: str, label: str, ref_uri: str | None = None) -> TermInput:
+    builder = DefiningNanopubBuilder(NAMESPACE)
+    stmts = [(RDF.type, RDFS.Class), (RDFS.label, Literal(label))]
+    if ref_uri:
+        stmts.append((REL, rdflib.URIRef(ref_uri)))
+    return TermInput(term_id=term_uri, assertion=builder.make_assertion(stmts), label=label)
 
 
 def _run(terms, existing=None):
@@ -85,6 +101,29 @@ def test_legacy_entry_without_fingerprint_is_backfilled_not_superseded():
     assert entry.thing_uri == f"{NAMESPACE}RAseed"
     assert entry.np_uri == "https://w3id.org/np/RAseed"
     assert entry.fingerprint != ""
+
+
+def test_supersede_resolves_interterm_reference_to_new_thing_uri():
+    A, B = NAMESPACE + "a", NAMESPACE + "b"
+    minter1, sup1 = _wrapped(TPL_OLD)
+    first = publish_incremental(
+        [_term_ref(A, "Alpha", ref_uri=B), _term_ref(B, "Beta")],
+        minter=minter1, supersession_builder=sup1, existing=IdMap(), dry_run=True,
+    )
+    thing_a = first.id_map[A].thing_uri
+    thing_b = first.id_map[B].thing_uri
+
+    # Change the template -> both drift -> both superseded.
+    minter2, sup2 = _wrapped(TPL_NEW)
+    result = publish_incremental(
+        [_term_ref(A, "Alpha", ref_uri=B), _term_ref(B, "Beta")],
+        minter=minter2, supersession_builder=sup2, existing=first.id_map, dry_run=True,
+    )
+    sup_a = next(s for s in result.superseded if s.term_id == A)
+    objs = set(sup_a.nanopub.assertion.objects(rdflib.URIRef(thing_a), REL))
+    # The reference now points at b's NEW thing URI, not the old-id.
+    assert objs == {rdflib.URIRef(thing_b)}
+    assert rdflib.URIRef(B) not in set(sup_a.nanopub.assertion.objects())
 
 
 def test_mixed_batch_mints_skips_and_supersedes():
